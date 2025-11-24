@@ -311,11 +311,28 @@
         height: 16px;
         cursor: pointer;
       }
+
+      .enabled-block {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 8px;
+        flex-direction: row-reverse;
+        justify-content: flex-end;
+      }
+
+      .enabled-block label {
+        margin: 0;
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <div id="status" class="status hidden"></div>
+      <div class="enabled-block">
+        <label for="enabled">Enabled</label>
+        <input type="checkbox" id="enabled" checked />
+      </div>
       <div id="rulesContainer"></div>
       <button class="btn" id="addConfigBtn">📝 Add configuration</button>
     </div>

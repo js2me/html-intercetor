@@ -3,12 +3,14 @@
 // Находим элементы панели
 const statusEl = document.getElementById('status');
 const urlPatternInput = document.getElementById('urlPattern');
+const enabledCheckbox = document.getElementById('enabled');
 const rulesContainer = document.getElementById('rulesContainer');
 const customJSInput = document.getElementById('customJS');
 const saveConfigBtn = document.getElementById('saveConfigBtn');
 const addConfigBtn = document.getElementById('addConfigBtn');
 const tabs = document.querySelectorAll('.tab');
 const config = {
+    enabled: false,
     rules: []
 };
 
@@ -16,7 +18,6 @@ const config = {
 function loadConfig() {
     return new Promise((res, rej) => {
         chrome.storage.local.get(['config'], (data) => {
-            console.log('data', data);
             try {
                 const parsed = JSON.parse(data.config)
                 Object.assign(config, parsed);
@@ -32,8 +33,6 @@ function loadConfig() {
 let abortControllersMap = new Map()
 
 function render(fullRerender = false) {
-    console.log('render', config.rules, fullRerender);
-
     if (fullRerender) {
         const ruleCards = [...rulesContainer.querySelectorAll('.card[data-rule-i]')];
         ruleCards.forEach(ruleCard => {
@@ -159,6 +158,11 @@ function render(fullRerender = false) {
 
 // Настройка обработчиков событий
 function setupEventListeners() {
+    enabledCheckbox.checked = config.enabled === true;
+    enabledCheckbox.addEventListener('change', () => {
+        config.enabled = enabledCheckbox.checked === true;
+        saveConfiguration(config, true);
+    })
     // Сохраняем конфигурацию
     addConfigBtn.addEventListener('click', () => {
         config.rules.push({
@@ -167,7 +171,7 @@ function setupEventListeners() {
             customBody: '',
             enabled: true,
         });
-        saveConfigurationNew(config, false)
+        saveConfiguration(config, false)
         render(true);
     });
     
@@ -175,7 +179,7 @@ function setupEventListeners() {
     chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 }
 
-const saveConfigurationNew = (config, isReloadPage = true) => {
+const saveConfiguration = (config, isReloadPage = true) => {
     chrome.storage.local.set({ config: JSON.stringify(config) }, () => {
         showStatus('✅ Configuration saved', 'success');
         // Автоматически перезагружаем страницу после сохранения
@@ -185,7 +189,7 @@ const saveConfigurationNew = (config, isReloadPage = true) => {
     });
 }
 
-const saveConfigurationLazy = _.debounce(saveConfigurationNew, 1000)
+const saveConfigurationLazy = _.debounce(saveConfiguration, 1000)
 
 async function attachDebugger(succeedCallback) {
     try {
@@ -293,7 +297,8 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
         setupEventListeners();
         
-        // Автоматически подключаем debugger при открытии расширения
-        setTimeout(() => attachDebugger(reloadTargetPage), 500);
+        if (config.enabled) {
+            setTimeout(() => attachDebugger(reloadTargetPage), 500);
+        }
     });
 });

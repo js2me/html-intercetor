@@ -3,7 +3,8 @@
 let debuggeeTabId = null;
 
 const config = {
-    rules: []
+  enabled: false,
+  rules: []
 };
 let urlPattern = '';
 let customScript = '';
@@ -91,17 +92,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Автоподключение к новым вкладкам если включено
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http')) {
-    setTimeout(async () => {
-      try {
-        await attachDebugger(tabId);
-        console.log('Auto-attached debugger to tab:', tabId);
-      } catch (error) {
-        console.error('Auto-attach failed:', error);
-      }
-    }, 300);
+  if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http') && config.enabled) {
+    try {
+      await attachDebugger(tabId);
+      console.log('Auto-attached debugger to tab:', tabId);
+    } catch (error) {
+      console.error('Auto-attach failed:', error);
+    }
   }
 });
 
@@ -450,6 +448,10 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     try {
       const parsed = JSON.parse(changes.config.newValue);
       Object.assign(config, parsed);
+
+      if (!config.enabled && debuggeeTabId) {
+        chrome.debugger.detach({ tabId: debuggeeTabId });
+      }
     } catch(_) {}
   }
 });
