@@ -47,7 +47,9 @@ function render(fullRerender = false) {
         let ruleCard = rulesContainer.querySelector(`.card[data-rule-i="${i}"]`);
         let removeRuleBtn = document.querySelector(`#rule-${i}-removeBtn`);
         let urlPatternInput = document.querySelector(`#rule-${i}-urlPatternInput`);
+        let customJsScript = document.querySelector(`#rule-${i}-customJsScript`);
         let customHeadInput = document.querySelector(`#rule-${i}-customHead`);
+        let enabledCheckbox = document.querySelector(`#rule-${i}-enabledCheckbox`);
         let customBodyInput = document.querySelector(`#rule-${i}-customBody`);
 
 
@@ -62,9 +64,9 @@ function render(fullRerender = false) {
             ruleCard.classList.add('card');
             ruleCard.setAttribute('data-rule-i', i);
             ruleCard.innerHTML=`
+        <button class="remove-rule" id="rule-${i}-removeBtn">❌</button>
         <div class="form-group">
-          <button class="remove-rule" id="rule-${i}-removeBtn">❌</button>
-          <label for="rule-${i}-urlPatternInput">URL pattern:</label>
+          <label class="rule-input-label" for="rule-${i}-urlPatternInput"><input type="checkbox" id="rule-${i}-enabledCheckbox" checked />URL pattern:</label>
           <input type="text" id="rule-${i}-urlPatternInput" placeholder="" />
           <div class="hint">
             Wildcard pattern for intercept requests (example:
@@ -92,7 +94,15 @@ function render(fullRerender = false) {
           <div class="hint">
             Input should container valid HTML
           </div>
-        </div>`;
+        </div>
+        <div class="form-group">
+          <label for="rule-${i}-customJsScript">Custom JS Script URL:</label>
+          <input type="text" id="rule-${i}-customJsScript" placeholder="" />
+          <div class="hint">
+            Example: https://unpkg.com/mobx-view-model-devtools/auto.global.js
+          </div>
+        </div>
+        `;
             rulesContainer.appendChild(ruleCard);
 
             removeRuleBtn = ruleCard.querySelector(`#rule-${i}-removeBtn`);
@@ -106,6 +116,13 @@ function render(fullRerender = false) {
             urlPatternInput.value = rule.urlPattern || ''
             urlPatternInput.addEventListener('input', (e) => {
                 rule.urlPattern = e.target.value.trim();
+                saveConfigurationLazy(config);
+            }, { signal: abortController.signal });
+
+            customJsScript = document.querySelector(`#rule-${i}-customJsScript`);
+            customJsScript.value = rule.customJsScript || ''
+            customJsScript.addEventListener('input', (e) => {
+                rule.customJsScript = e.target.value.trim();
                 saveConfigurationLazy(config);
             }, { signal: abortController.signal });
 
@@ -123,10 +140,19 @@ function render(fullRerender = false) {
                 saveConfigurationLazy(config);
             }, { signal: abortController.signal });
 
+
+            enabledCheckbox = document.querySelector(`#rule-${i}-enabledCheckbox`);
+            enabledCheckbox.checked = rule.enabled === true;
+            enabledCheckbox.addEventListener('change', (e) => {
+                rule.enabled = enabledCheckbox.checked === true;
+                saveConfigurationLazy(config);
+            }, { signal: abortController.signal });
         } else {
             urlPatternInput.value = rule.urlPattern || ''
             customHeadInput.value = rule.customHead || ''
             customBodyInput.value = rule.customBody || ''
+            customJsScript.value = rule.customJsScript || ''
+            enabledCheckbox.checked = rule.enabled === true;
         }
     });
 }

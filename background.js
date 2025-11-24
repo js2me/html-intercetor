@@ -19,6 +19,7 @@ chrome.storage.local.get(['config'], (data) => {
     } catch(_) {}
 })
 
+
 // Открываем sidepanel при клике на иконку
 chrome.action.onClicked.addListener((tab) => {
   // Пробуем использовать sidePanel API если доступно
@@ -37,6 +38,9 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
+
+let devtoolsScriptCache = new Map()
+
 // Создаем offscreen document если его нет
 async function ensureOffscreenDocument() {
   if (await chrome.offscreen.hasDocument()) {
@@ -47,6 +51,28 @@ async function ensureOffscreenDocument() {
     url: 'offscreen.html',
     reasons: ['DOM_PARSER'],
     justification: 'Execute user scripts safely'
+  });
+}
+
+async function fetchDevtoolsScript(url) {
+  if (devtoolsScriptCache.has(url)) {
+    return devtoolsScriptCache.get(url);
+  }
+
+  await ensureOffscreenDocument();
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      type: 'FETCH_SCRIPT',
+      url: url,
+    }, (response) => {
+      if (response?.success) {
+        devtoolsScriptCache.set(url, response.data);
+        resolve(response.data);
+      } else {
+        reject(new Error(response?.error || 'Failed to fetch'));
+      }
+    });
   });
 }
 
@@ -124,7 +150,9 @@ chrome.debugger.onEvent.addListener(async (debuggee, method, params) => {
   if (method === 'Fetch.requestPaused' && isInterceptorActive) {
     const { requestId, request, responseStatusCode, responseHeaders, resourceType } = params;
 
-    if (!matchPattern(request.url, urlPattern)) {
+    const matchedRules = getMatchedRules(request.url, config);
+
+    if (!matchedRules.length) {
       await chrome.debugger.sendCommand(debuggee, 'Fetch.continueRequest', { requestId });
       return;
     }
@@ -151,13 +179,13 @@ chrome.debugger.onEvent.addListener(async (debuggee, method, params) => {
         html = decodeBase64(html);
       }
 
-      if (!html.includes('<body>') || !html.includes('</body>') || !html.includes('<head>') || !html.includes('</head>')) {
+      if (!html.includes('<body') || !html.includes('</body>') || !html.includes('<head') || !html.includes('</head>')) {
         await chrome.debugger.sendCommand(debuggee, 'Fetch.continueRequest', { requestId });
         return;
       } 
 
       // Используем новую функцию safeProcessHTML с offscreen document
-      const modifiedHtml = await safeProcessHTML(html, config);
+      const modifiedHtml = await safeProcessHTML(html, config.rules);
 
       try {
         await chrome.runtime.sendMessage({
@@ -245,26 +273,56 @@ function matchPattern(url, pattern) {
   }
 }
 
+function getMatchedRules(url, config) {
+  const allRules = (config.rules || []);
+
+  return allRules.filter(rule => {
+    return matchPattern(url, rule.urlPattern)
+  });
+}
+
 
 // Безопасное выполнение пользовательского скрипта
-async function safeProcessHTML(html, config) {
-  let proceedHtml = html;
+async function safeProcessHTML(html, inputRules) {let proceedHtml = html;
 
-  const rules = (config.rules || []).slice().reverse()
+  const rules = (inputRules || []).slice()
 
-  rules.forEach(rule => {
+  for await (const rule of rules) {
     if (!rule.enabled) {
-      return;
+      continue;
     }
 
     if (rule.customHead) {
-      proceedHtml = proceedHtml.replace(`<head>`, `<head>${rule.customHead}`);
+      proceedHtml = proceedHtml.replace(`</head>`, `${rule.customHead}</head>`);
     }
 
     if (rule.customBody) {
-      proceedHtml = proceedHtml.replace(`<body>`, `<body>${rule.customBody}`);
+      proceedHtml = proceedHtml.replace(`</body>`, `${rule.customBody}</body>`);
     }
-  })
+
+    if (rule.customJsScript) {
+        let customLoadedJsScript = '';
+        try {  
+          customLoadedJsScript = await fetchDevtoolsScript(rule.customJsScript);
+          console.log('Devtools script loaded, length:', customLoadedJsScript.length);
+        } catch (e) {
+          console.warn('Failed to load devtools script:', e);
+        }
+
+        if (customLoadedJsScript) {
+            try {
+              const scriptTag = `<script type="text/javascript" data-script="html-interceptor">
+${customLoadedJsScript.replaceAll('<', '\<').replaceAll('\\', '\\\\')}
+          </script></head>`;
+              
+              proceedHtml = proceedHtml.replace('</head>', scriptTag);
+            console.log('✓ Script injected (base64)');
+          } catch (e) {
+            console.error('Failed to inject script:', e);
+          }
+        }
+    }
+  }
 
   return proceedHtml;
 }
@@ -381,12 +439,10 @@ chrome.runtime.onSuspend.addListener(() => {
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
-    if (changes.urlPattern) {
-      urlPattern = changes.urlPattern.newValue;
-    }
-    if (changes.customScript) {
-      customScript = changes.customScript.newValue;
-    }
+    try {
+      const parsed = JSON.parse(changes.config.newValue);
+      Object.assign(config, parsed);
+    } catch(_) {}
   }
 });
 
