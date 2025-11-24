@@ -206,7 +206,7 @@ chrome.debugger.onEvent.addListener(async (debuggee, method, params) => {
       await chrome.debugger.sendCommand(debuggee, 'Fetch.fulfillRequest', {
         requestId,
         responseCode: responseStatusCode || 200,
-        responseHeaders: updateContentLength(responseHeaders, modifiedHtml.length),
+        responseHeaders: updateHeaders(responseHeaders, modifiedHtml.length),
         body: base64Body
       });
 
@@ -301,26 +301,28 @@ async function safeProcessHTML(html, inputRules) {let proceedHtml = html;
     }
 
     if (rule.customJsScript) {
-        let customLoadedJsScript = '';
-        try {  
-          customLoadedJsScript = await fetchDevtoolsScript(rule.customJsScript);
-          console.log('Devtools script loaded, length:', customLoadedJsScript.length);
-        } catch (e) {
-          console.warn('Failed to load devtools script:', e);
-        }
+      proceedHtml = proceedHtml.replace('</head>', `<script src="${rule.customJsScript}"></script></head>`)
+//         let customLoadedJsScript = '';
+//         try {  
+//           customLoadedJsScript = await fetchDevtoolsScript(rule.customJsScript);
+//           console.log('Devtools script loaded, length:', customLoadedJsScript.length);
+//         } catch (e) {
+//           console.warn('Failed to load devtools script:', e);
+//         }
 
-        if (customLoadedJsScript) {
-            try {
-              const scriptTag = `<script type="text/javascript" data-script="html-interceptor">
-${customLoadedJsScript.replaceAll('<', '\<').replaceAll('\\', '\\\\')}
-          </script></head>`;
+//         if (customLoadedJsScript) {
+//             try {
+//               const scriptTag = `<script type="text/javascript" data-script="html-interceptor">
+// ${he.decode(customLoadedJsScript)}
+//           </script></head>`;
               
-              proceedHtml = proceedHtml.replace('</head>', scriptTag);
-            console.log('✓ Script injected (base64)');
-          } catch (e) {
-            console.error('Failed to inject script:', e);
-          }
-        }
+//           console.log('ddd',scriptTag);
+//               proceedHtml = proceedHtml.replace('</head>', scriptTag);
+//             console.log('✓ Script injected (base64)');
+//           } catch (e) {
+//             console.error('Failed to inject script:', e);
+//           }
+//         }
     }
   }
 
@@ -368,31 +370,37 @@ function encodeToBase64(str) {
   }
 }
 
-// Функция для обновления Content-Length
-function updateContentLength(headers, newLength) {
-  if (!headers) return headers;
-  
-  const newHeaders = [];
-  let contentLengthUpdated = false;
+function updateHeaders(headers, newLength) {
+    if (!headers) return [];
 
-  for (const header of headers) {
-    if (header.name.toLowerCase() === 'content-length') {
-      newHeaders.push({ ...header, value: String(newLength) });
-      contentLengthUpdated = true;
-    } else {
-      newHeaders.push(header);
+    const newHeaders = [];
+    let contentLengthUpdated = false;
+
+    for (const header of headers) {
+        const name = header.name.toLowerCase();
+
+        // 1. УДАЛЯЕМ CSP, чтобы разрешить выполнение наших скриптов
+        if (name === 'content-security-policy' || 
+            name === 'content-security-policy-report-only' ||
+            name === 'x-webkit-csp') {
+            continue; 
+        }
+
+        // 2. Обновляем Content-Length
+        if (name === 'content-length') {
+            newHeaders.push({ name: header.name, value: String(newLength) });
+            contentLengthUpdated = true;
+        } else {
+            newHeaders.push(header);
+        }
     }
-  }
 
-  // Если заголовка Content-Length не было, добавляем его
-  if (!contentLengthUpdated) {
-    newHeaders.push({
-      name: 'Content-Length',
-      value: String(newLength)
-    });
-  }
+    // Добавляем Content-Length, если его не было
+    if (!contentLengthUpdated) {
+        newHeaders.push({ name: 'Content-Length', value: String(newLength) });
+    }
 
-  return newHeaders;
+    return newHeaders;
 }
 
 // Улучшенное сопоставление паттернов с wildcard
